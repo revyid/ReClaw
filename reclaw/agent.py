@@ -1,3 +1,4 @@
+import json
 from collections import deque
 from .llm import LLMClient
 from .tools import TOOL_DEFINITIONS, TOOL_MAP
@@ -25,68 +26,87 @@ class ReClawAgent:
         return result
 
     def run(self, user_input: str):
-        """Jalankan satu turn interaksi. Yield string untuk ditampilkan ke user."""
-        # Bangun messages untuk API: system + riwayat lama + user_input baru
+        """Jalankan satu turn interaksi. Yield dict untuk status atau string untuk konten."""
         messages = [self.system_message]
         messages.extend(list(self.history))
         messages.append({"role": "user", "content": user_input})
 
         iteration = 0
-        final_answer = None
-
+        
         while iteration < MAX_ITERATIONS:
             iteration += 1
-            msg = self.llm.chat(messages, tools=TOOL_DEFINITIONS, tool_choice="auto")
+            
+            # We use streaming for the assistant's response
+            stream = self.llm.chat(messages, tools=TOOL_DEFINITIONS, tool_choice="auto", stream=True)
+            
+            full_content = ""
+            tool_calls = []
+            
+            # Process the stream
+            for chunk in stream:
+                if hasattr(chunk, 'choices') and chunk.choices:
+                    delta = chunk.choices[0].delta
+                    
+                    # Handle content streaming
+                    if delta.content:
+                        full_content += delta.content
+                        yield {"type": "content", "delta": delta.content}
+                    
+                    # Handle tool calls streaming
+                    if delta.tool_calls:
+                        for tc_delta in delta.tool_calls:
+                            if len(tool_calls) <= tc_delta.index:
+                                tool_calls.append({
+                                    "id": tc_delta.id,
+                                    "type": "function",
+                                    "function": {"name": "", "arguments": ""}
+                                })
+                            
+                            if tc_delta.id:
+                                tool_calls[tc_delta.index]["id"] = tc_delta.id
+                            if tc_delta.function:
+                                if tc_delta.function.name:
+                                    tool_calls[tc_delta.index]["function"]["name"] += tc_delta.function.name
+                                if tc_delta.function.arguments:
+                                    tool_calls[tc_delta.index]["function"]["arguments"] += tc_delta.function.arguments
 
-            # Jika API error dalam bentuk dict
-            if isinstance(msg, dict):
-                final_answer = f"[Error] {msg['content']}"
-                break
+            # If no tool calls, we are done with this turn
+            if not tool_calls:
+                self.history.append({"role": "user", "content": user_input})
+                self.history.append({"role": "assistant", "content": full_content})
+                return
 
-            # Jika tidak ada tool call -> jawaban langsung
-            if not msg.tool_calls:
-                final_answer = msg.content or "(tidak ada respons)"
-                break
-
-            # Ada tool calls: tambahkan ke messages untuk iterasi berikutnya
+            # Prepare assistant message with tool calls for history
             assistant_msg = {
                 "role": "assistant",
-                "content": msg.content or "",
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {"name": tc.function.name, "arguments": tc.function.arguments}
-                    }
-                    for tc in msg.tool_calls
-                ]
+                "content": full_content,
+                "tool_calls": tool_calls
             }
             messages.append(assistant_msg)
 
-            # Eksekusi setiap tool
-            for tc in msg.tool_calls:
-                name = tc.function.name
-                import json
+            # Execute tools
+            for tc in tool_calls:
+                name = tc["function"]["name"]
                 try:
-                    args = json.loads(tc.function.arguments)
+                    args = json.loads(tc["function"]["arguments"])
                 except Exception:
                     args = {}
 
+                yield {"type": "tool_start", "name": name, "args": args}
+                
                 if name in TOOL_MAP:
-                    result = TOOL_MAP[name](**args)
+                    try:
+                        result = TOOL_MAP[name](**args)
+                    except Exception as e:
+                        result = f"Error executing tool: {str(e)}"
                 else:
                     result = f"Error: Tool '{name}' tidak dikenal."
 
-                result = self._truncate_tool_result(str(result))
+                result_str = self._truncate_tool_result(str(result))
                 tool_msg = {
                     "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result
+                    "tool_call_id": tc["id"],
+                    "content": result_str
                 }
                 messages.append(tool_msg)
-                yield f"[Tool] {name} -> {result[:120]}..."
-
-        # Simpan ringkasan turn ke history setelah selesai
-        self.history.append({"role": "user", "content": user_input})
-        self.history.append({"role": "assistant", "content": final_answer})
-        yield final_answer
+                yield {"type": "tool_end", "name": name, "result": result_str}

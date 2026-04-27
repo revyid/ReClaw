@@ -12,7 +12,7 @@ if not os.getenv("RECLAW_API_KEY"):
     sys.exit(1)
 
 from reclaw.agent import ReClawAgent
-from reclaw.ui import print_welcome, print_response, print_error, get_input
+from reclaw.ui import print_welcome, print_error, get_input, StreamingDisplay
 
 def main():
     print_welcome()
@@ -33,15 +33,14 @@ def main():
             continue
 
         try:
-            from reclaw.ui import StatusManager
-            with StatusManager("Processing..."):
-                # We consume the generator here
-                # In a real streaming UI we might update the Live display
-                # But for now we'll print tool calls as they happen
-                chunks = list(agent.run(user_text))
-            
-            for chunk in chunks:
-                print_response(chunk)
+            with StreamingDisplay() as display:
+                for event in agent.run(user_text):
+                    if event["type"] == "content":
+                        display.update_content(event["delta"])
+                    elif event["type"] == "tool_start":
+                        display.show_tool_start(event["name"], event["args"])
+                    elif event["type"] == "tool_end":
+                        display.show_tool_end(event["name"], event["result"])
         except Exception as e:
             print_error(str(e))
 

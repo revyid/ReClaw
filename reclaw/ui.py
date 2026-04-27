@@ -23,11 +23,11 @@ STYLE = {
 }
 
 WELCOME_TEXT = """
-[bold white]ReClaw[/bold white] [dim]v2.0[/dim]
+[bold white]ReClaw[/bold white] [dim]v2.1[/dim]
 [dim]AI Agentic Coding Assistant[/dim]
 
 [cyan]•[/cyan] [white]Model:[/white] [dim]kimi-k2-instruct[/dim]
-[cyan]•[/cyan] [white]Status:[/white] [green]Ready[/green]
+[cyan]•[/cyan] [white]Status:[/white] [green]Ready (Real-time Streaming)[/green]
 [cyan]•[/cyan] [white]Type [bold red]exit[/bold red] to quit[/white]
 """
 
@@ -37,26 +37,9 @@ def print_welcome():
         WELCOME_TEXT.strip(),
         border_style=STYLE["border"],
         padding=(1, 2),
-        subtitle="[dim]Minimalist & Powerful[/dim]"
+        subtitle="[dim]Minimalist & Real-time[/dim]"
     ))
     console.print("\n")
-
-def print_response(text: str):
-    if text.startswith("[Tool]"):
-        # Format tool calls more cleanly
-        tool_name = text.split("]")[0].replace("[", "")
-        content = text.split("->")[1].strip() if "->" in text else ""
-        
-        msg = Text()
-        msg.append(" ⚙ ", style="cyan")
-        msg.append(f"{tool_name}: ", style="bold white")
-        msg.append(content, style="dim white")
-        console.print(msg)
-    else:
-        # Markdown response with a bit of padding
-        console.print("\n")
-        console.print(Markdown(text))
-        console.print("\n")
 
 def print_error(text: str):
     console.print(f"\n[bold red]![/bold red] {text}\n")
@@ -79,6 +62,44 @@ def get_input() -> str:
         raise
     except EOFError:
         raise
+
+class StreamingDisplay:
+    """Handles real-time display of AI responses and tool calls."""
+    def __init__(self):
+        self.content = ""
+        self.live = None
+        self.current_tool = None
+
+    def __enter__(self):
+        self.live = Live(Text(""), refresh_per_second=10, transient=False)
+        self.live.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.live:
+            self.live.stop()
+        # Final print to ensure Markdown is rendered properly after streaming
+        if self.content:
+            console.print(Markdown(self.content))
+            console.print("\n")
+
+    def update_content(self, delta: str):
+        self.content += delta
+        # We don't render Markdown in real-time for performance and stability,
+        # instead we show the raw text and render Markdown at the end.
+        self.live.update(Text(self.content, style="white"))
+
+    def show_tool_start(self, name: str, args: dict):
+        # Print tool calls above the streaming content
+        msg = Text()
+        msg.append(" ⚙ ", style="cyan")
+        msg.append(f"{name}: ", style="bold white")
+        msg.append(str(args), style="dim white")
+        console.print(msg)
+
+    def show_tool_end(self, name: str, result: str):
+        # Optional: show tool result summary
+        pass
 
 class StatusManager:
     """Helper to show a clean loading spinner during AI processing."""

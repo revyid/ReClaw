@@ -11,12 +11,13 @@ class LLMClient:
         )
         self.model = MODEL_NAME
 
-    def chat(self, messages, tools=None, tool_choice="auto"):
+    def chat(self, messages, tools=None, tool_choice="auto", stream=False):
         """Kirim request ke NVIDIA API."""
         kwargs = {
             "model": self.model,
             "messages": messages,
             "temperature": 0.2,
+            "stream": stream
         }
         if tools:
             kwargs["tools"] = tools
@@ -24,6 +25,13 @@ class LLMClient:
 
         try:
             response = self.client.chat.completions.create(**kwargs)
+            if stream:
+                return response
             return response.choices[0].message
         except Exception as e:
+            if stream:
+                # For streaming, we'll handle errors by yielding an error message
+                def error_generator():
+                    yield {"error": str(e)}
+                return error_generator()
             return {"role": "assistant", "content": f"Error API: {str(e)}"}
