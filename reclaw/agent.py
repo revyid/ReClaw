@@ -54,6 +54,11 @@ class ReClawAgent:
             
             try:
                 for chunk in stream:
+                    # Handle error dict from llm.py
+                    if isinstance(chunk, dict) and "error" in chunk:
+                        yield {"type": "error", "content": f"API Error: {chunk['error']}"}
+                        return
+                        
                     if hasattr(chunk, 'choices') and chunk.choices:
                         delta = chunk.choices[0].delta
                         if delta.content:

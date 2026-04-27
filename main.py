@@ -1,5 +1,6 @@
 import os
 import sys
+import asyncio
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,27 +13,31 @@ if not os.getenv("RECLAW_API_KEY"):
     sys.exit(1)
 
 from reclaw.agent import ReClawAgent
-from reclaw.ui import print_welcome, print_error, get_input, ui
+from reclaw.ui import print_welcome, ui
 
-def main():
+async def run_app():
     print_welcome()
+    await asyncio.sleep(1.5) # Show welcome for a bit
+    
     agent = ReClawAgent()
+    ui.start()
+    
+    try:
+        while True:
+            ui.set_status("Idle")
+            user_text = await ui.get_input_async()
 
-    while True:
-        user_text = get_input()
+            if user_text.strip().lower() in ("exit", "quit", "keluar"):
+                break
 
-        if user_text.strip().lower() in ("exit", "quit", "keluar"):
-            print("\nSampai jumpa!")
-            break
+            if not user_text.strip():
+                continue
 
-        if not user_text.strip():
-            continue
-
-        ui.add_user_message(user_text)
-        
-        try:
-            with ui:
+            ui.add_user_message(user_text)
+            
+            try:
                 ui.set_status("Thinking...")
+                # Iterate through the agent's generator
                 for event in agent.run(user_text):
                     if event["type"] == "content":
                         ui.set_status("Streaming...")
@@ -44,13 +49,19 @@ def main():
                         ui.set_tool(None)
                     elif event["type"] == "error":
                         ui.set_status("Error")
-                        # We'll show errors in the chat area for now
                         ui.update_content(f"\n\n[bold red]![/bold red] {event['content']}\n")
                 
                 ui.finalize_content()
-                ui.set_status("Idle")
-        except Exception as e:
-            print_error(str(e))
+            except Exception as e:
+                ui.set_status("Error")
+                ui.update_content(f"\n\n[bold red]SYSTEM ERROR:[/bold red] {str(e)}\n")
+                ui.finalize_content()
+    finally:
+        ui.stop()
+        print("\nSampai jumpa!")
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(run_app())
+    except KeyboardInterrupt:
+        pass

@@ -5,11 +5,12 @@ from rich.live import Live
 from rich.text import Text
 from rich.markdown import Markdown
 from rich.table import Table
-from rich.spinner import Spinner
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style as PromptStyle
 from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.patch_stdout import patch_stdout
 import datetime
+import asyncio
 
 console = Console()
 
@@ -32,6 +33,10 @@ class ProfessionalUI:
         self.status = "Idle"
         self.layout = self._create_layout()
         self.live = None
+        self.session = PromptSession(style=PromptStyle.from_dict({
+            'prompt': f"bold {THEME['accent']}",
+            'arrow': THEME['primary'],
+        }))
 
     def _create_layout(self):
         layout = Layout()
@@ -51,7 +56,7 @@ class ProfessionalUI:
         grid.add_column(justify="left", ratio=1)
         grid.add_column(justify="right", ratio=1)
         grid.add_row(
-            Text(" RECLAW PRO v3.0", style=f"bold {THEME['accent']}"),
+            Text(" RECLAW PRO v3.2", style=f"bold {THEME['accent']}"),
             Text(datetime.datetime.now().strftime("%H:%M:%S"), style=THEME["secondary"])
         )
         return Panel(grid, style=f"white {THEME['bg']}", border_style=THEME["secondary"])
@@ -59,29 +64,35 @@ class ProfessionalUI:
     def _get_footer(self):
         status_color = THEME["success"] if self.status == "Idle" else THEME["accent"]
         return Panel(
-            Text(f" STATUS: {self.status}", style=f"bold {status_color}"),
+            Text(f" STATUS: {self.status} | Type 'exit' to quit", style=f"bold {status_color}"),
             style=f"white {THEME['bg']}",
             border_style=THEME["secondary"]
         )
 
     def _get_sidebar(self):
         table = Table(show_header=False, expand=True, box=None)
-        table.add_row(Text("TOOLS ACTIVE", style="bold white"))
+        table.add_row(Text("SYSTEM INFO", style="bold white"))
         table.add_row(Text("─" * 15, style=THEME["secondary"]))
         
+        table.add_row(Text("\nACTIVE TOOL:", style="dim white"))
         if self.current_tool:
             table.add_row(Text(f"⚙ {self.current_tool}", style=THEME["tool"]))
         else:
             table.add_row(Text("None", style=THEME["secondary"]))
             
-        return Panel(table, title="System", border_style=THEME["secondary"])
+        table.add_row(Text("\nHISTORY:", style="dim white"))
+        table.add_row(Text(f"Turns: {len(self.history)//2}", style="white"))
+            
+        return Panel(table, title="Monitor", border_style=THEME["secondary"])
 
     def _get_chat(self):
         chat_renderable = Table.grid(expand=True)
         chat_renderable.add_column()
         
-        # Show last 5 interactions for context in the live view
-        for msg in self.history[-5:]:
+        # Show recent history
+        visible_history = self.history[-6:]
+        
+        for msg in visible_history:
             if msg["role"] == "user":
                 chat_renderable.add_row(Text(f"\n❯ {msg['content']}", style=f"bold {THEME['accent']}"))
             else:
@@ -99,13 +110,12 @@ class ProfessionalUI:
         self.layout["sidebar"].update(self._get_sidebar())
         self.layout["chat"].update(self._get_chat())
 
-    def __enter__(self):
+    def start(self):
         self.live = Live(self.layout, refresh_per_second=10, screen=True)
         self.live.start()
         self.update_display()
-        return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def stop(self):
         if self.live:
             self.live.stop()
 
@@ -131,16 +141,25 @@ class ProfessionalUI:
         self.current_tool = name
         self.update_display()
 
-# Global UI instance for simple access
+    async def get_input_async(self):
+        """Get input while keeping the TUI alive."""
+        # patch_stdout allows prompt_toolkit to work alongside other output
+        with patch_stdout():
+            try:
+                return await self.session.prompt_async(HTML(f'<prompt>ReClaw</prompt> <arrow>❯</arrow> '))
+            except (KeyboardInterrupt, EOFError):
+                return "exit"
+
+# Global UI instance
 ui = ProfessionalUI()
 
 def print_welcome():
-    # We use a clean splash screen before entering the TUI
     welcome_panel = Panel(
         Text.assemble(
             ("RECLAW ", f"bold {THEME['accent']}"),
             ("Professional Coding Assistant\n", "white"),
             ("─" * 40 + "\n", THEME["secondary"]),
+            ("Initializing Persistent TUI Mode...\n", "green"),
             ("Type ", THEME["secondary"]),
             ("exit", "bold red"),
             (" to quit.", THEME["secondary"])
@@ -151,17 +170,6 @@ def print_welcome():
     console.print("\n")
     console.print(welcome_panel, justify="center")
     console.print("\n")
-
-def get_input() -> str:
-    prompt_style = PromptStyle.from_dict({
-        'prompt': f"bold {THEME['accent']}",
-        'arrow': THEME['primary'],
-    })
-    session = PromptSession(style=prompt_style)
-    try:
-        return session.prompt(HTML(f'<prompt>ReClaw</prompt> <arrow>❯</arrow> '))
-    except (KeyboardInterrupt, EOFError):
-        return "exit"
 
 def print_error(text: str):
     console.print(f"\n[bold red]ERROR:[/bold red] {text}\n")
