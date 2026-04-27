@@ -7,22 +7,19 @@ from rich.markdown import Markdown
 from rich.table import Table
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style as PromptStyle
-from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.patch_stdout import patch_stdout
 import datetime
-import asyncio
 
-console = Console()
+# Use standard colors for maximum compatibility
+console = Console(color_system="auto")
 
-# Professional Theme
 THEME = {
-    "bg": "on #121212",
-    "primary": "#ffffff",
-    "secondary": "#888888",
-    "accent": "#00d7ff",
-    "success": "#00ff00",
-    "error": "#ff0000",
-    "tool": "#ffaf00"
+    "primary": "white",
+    "secondary": "bright_black",
+    "accent": "cyan",
+    "success": "green",
+    "error": "red",
+    "tool": "yellow"
 }
 
 class ProfessionalUI:
@@ -34,8 +31,8 @@ class ProfessionalUI:
         self.layout = self._create_layout()
         self.live = None
         self.session = PromptSession(style=PromptStyle.from_dict({
-            'prompt': f"bold {THEME['accent']}",
-            'arrow': THEME['primary'],
+            'prompt': 'cyan bold',
+            'arrow': 'white',
         }))
 
     def _create_layout(self):
@@ -56,16 +53,15 @@ class ProfessionalUI:
         grid.add_column(justify="left", ratio=1)
         grid.add_column(justify="right", ratio=1)
         grid.add_row(
-            Text(" RECLAW PRO v3.2", style=f"bold {THEME['accent']}"),
+            Text(" RECLAW PRO v3.3", style=f"bold {THEME['accent']}"),
             Text(datetime.datetime.now().strftime("%H:%M:%S"), style=THEME["secondary"])
         )
-        return Panel(grid, style=f"white {THEME['bg']}", border_style=THEME["secondary"])
+        return Panel(grid, border_style=THEME["secondary"])
 
     def _get_footer(self):
         status_color = THEME["success"] if self.status == "Idle" else THEME["accent"]
         return Panel(
             Text(f" STATUS: {self.status} | Type 'exit' to quit", style=f"bold {status_color}"),
-            style=f"white {THEME['bg']}",
             border_style=THEME["secondary"]
         )
 
@@ -89,16 +85,16 @@ class ProfessionalUI:
         chat_renderable = Table.grid(expand=True)
         chat_renderable.add_column()
         
-        # Show recent history
+        # Show recent history (limit to avoid overflow)
         visible_history = self.history[-6:]
         
         for msg in visible_history:
             if msg["role"] == "user":
                 chat_renderable.add_row(Text(f"\n❯ {msg['content']}", style=f"bold {THEME['accent']}"))
             else:
+                # Use a simpler rendering for streaming to avoid ANSI mess
                 chat_renderable.add_row(Markdown(msg["content"]))
         
-        # Show current streaming content
         if self.current_content:
             chat_renderable.add_row(Text("\n" + self.current_content, style="white"))
             
@@ -111,9 +107,11 @@ class ProfessionalUI:
         self.layout["chat"].update(self._get_chat())
 
     def start(self):
-        self.live = Live(self.layout, refresh_per_second=10, screen=True)
+        # Disable screen=True if it causes issues, but try to keep it for persistence
+        self.live = Live(self.layout, refresh_per_second=4, screen=True, auto_refresh=False)
         self.live.start()
         self.update_display()
+        self.live.refresh()
 
     def stop(self):
         if self.live:
@@ -122,49 +120,50 @@ class ProfessionalUI:
     def set_status(self, status):
         self.status = status
         self.update_display()
+        if self.live: self.live.refresh()
 
     def add_user_message(self, content):
         self.history.append({"role": "user", "content": content})
         self.update_display()
+        if self.live: self.live.refresh()
 
     def update_content(self, delta):
         self.current_content += delta
         self.update_display()
+        if self.live: self.live.refresh()
 
     def finalize_content(self):
         if self.current_content:
             self.history.append({"role": "assistant", "content": self.current_content})
             self.current_content = ""
         self.update_display()
+        if self.live: self.live.refresh()
 
     def set_tool(self, name):
         self.current_tool = name
         self.update_display()
+        if self.live: self.live.refresh()
 
     async def get_input_async(self):
-        """Get input while keeping the TUI alive."""
-        # patch_stdout allows prompt_toolkit to work alongside other output
         with patch_stdout():
             try:
-                return await self.session.prompt_async(HTML(f'<prompt>ReClaw</prompt> <arrow>❯</arrow> '))
+                # Using a simpler prompt to avoid issues
+                return await self.session.prompt_async("ReClaw ❯ ")
             except (KeyboardInterrupt, EOFError):
                 return "exit"
 
-# Global UI instance
 ui = ProfessionalUI()
 
 def print_welcome():
     welcome_panel = Panel(
         Text.assemble(
-            ("RECLAW ", f"bold {THEME['accent']}"),
+            ("RECLAW ", "bold cyan"),
             ("Professional Coding Assistant\n", "white"),
-            ("─" * 40 + "\n", THEME["secondary"]),
-            ("Initializing Persistent TUI Mode...\n", "green"),
-            ("Type ", THEME["secondary"]),
-            ("exit", "bold red"),
-            (" to quit.", THEME["secondary"])
+            ("─" * 40 + "\n", "bright_black"),
+            ("Initializing Compatible TUI Mode...\n", "green"),
+            ("Type 'exit' to quit.", "bright_black")
         ),
-        border_style=THEME["accent"],
+        border_style="cyan",
         padding=(1, 2)
     )
     console.print("\n")
