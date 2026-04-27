@@ -23,11 +23,11 @@ STYLE = {
 }
 
 WELCOME_TEXT = """
-[bold white]ReClaw[/bold white] [dim]v2.1[/dim]
+[bold white]ReClaw[/bold white] [dim]v2.2[/dim]
 [dim]AI Agentic Coding Assistant[/dim]
 
 [cyan]•[/cyan] [white]Model:[/white] [dim]kimi-k2-instruct[/dim]
-[cyan]•[/cyan] [white]Status:[/white] [green]Ready (Real-time Streaming)[/green]
+[cyan]•[/cyan] [white]Status:[/white] [green]Ready (Auto-Reconnect)[/green]
 [cyan]•[/cyan] [white]Type [bold red]exit[/bold red] to quit[/white]
 """
 
@@ -37,7 +37,7 @@ def print_welcome():
         WELCOME_TEXT.strip(),
         border_style=STYLE["border"],
         padding=(1, 2),
-        subtitle="[dim]Minimalist & Real-time[/dim]"
+        subtitle="[dim]Minimalist & Robust[/dim]"
     ))
     console.print("\n")
 
@@ -68,37 +68,47 @@ class StreamingDisplay:
     def __init__(self):
         self.content = ""
         self.live = None
-        self.current_tool = None
 
     def __enter__(self):
-        self.live = Live(Text(""), refresh_per_second=10, transient=False)
+        # We use a simple Live display for the text content
+        self.live = Live(Text(""), refresh_per_second=10, transient=True)
         self.live.start()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.live:
             self.live.stop()
-        # Final print to ensure Markdown is rendered properly after streaming
+        # After streaming is done, we print the final Markdown properly
         if self.content:
             console.print(Markdown(self.content))
             console.print("\n")
 
     def update_content(self, delta: str):
         self.content += delta
-        # We don't render Markdown in real-time for performance and stability,
-        # instead we show the raw text and render Markdown at the end.
+        # Update the live display with the current accumulated text
         self.live.update(Text(self.content, style="white"))
 
     def show_tool_start(self, name: str, args: dict):
-        # Print tool calls above the streaming content
+        # Stop live display temporarily to print tool call clearly
+        if self.live:
+            self.live.stop()
+        
+        # Print the accumulated content so far before the tool call
+        if self.content:
+            console.print(Text(self.content, style="white"))
+            self.content = "" # Reset content to avoid duplication
+            
         msg = Text()
         msg.append(" ⚙ ", style="cyan")
         msg.append(f"{name}: ", style="bold white")
         msg.append(str(args), style="dim white")
         console.print(msg)
+        
+        # Restart live display for next content chunks
+        if self.live:
+            self.live.start()
 
     def show_tool_end(self, name: str, result: str):
-        # Optional: show tool result summary
         pass
 
 class StatusManager:

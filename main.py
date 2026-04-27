@@ -41,6 +41,8 @@ def main():
                         display.show_tool_start(event["name"], event["args"])
                     elif event["type"] == "tool_end":
                         display.show_tool_end(event["name"], event["result"])
+                    elif event["type"] == "error":
+                        print_error(event["content"])
         except Exception as e:
             print_error(str(e))
 

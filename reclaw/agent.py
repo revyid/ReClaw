@@ -1,4 +1,5 @@
 import json
+import time
 from collections import deque
 from .llm import LLMClient
 from .tools import TOOL_DEFINITIONS, TOOL_MAP
@@ -36,39 +37,56 @@ class ReClawAgent:
         while iteration < MAX_ITERATIONS:
             iteration += 1
             
-            # We use streaming for the assistant's response
-            stream = self.llm.chat(messages, tools=TOOL_DEFINITIONS, tool_choice="auto", stream=True)
+            # Retry logic for connection issues
+            max_retries = 3
+            retry_count = 0
+            stream = None
+            
+            while retry_count < max_retries:
+                try:
+                    stream = self.llm.chat(messages, tools=TOOL_DEFINITIONS, tool_choice="auto", stream=True)
+                    break
+                except Exception as e:
+                    retry_count += 1
+                    if retry_count >= max_retries:
+                        yield {"type": "error", "content": f"Gagal terhubung ke AI setelah {max_retries} percobaan: {str(e)}"}
+                        return
+                    time.sleep(1 * retry_count) # Exponential backoff
             
             full_content = ""
             tool_calls = []
             
-            # Process the stream
-            for chunk in stream:
-                if hasattr(chunk, 'choices') and chunk.choices:
-                    delta = chunk.choices[0].delta
-                    
-                    # Handle content streaming
-                    if delta.content:
-                        full_content += delta.content
-                        yield {"type": "content", "delta": delta.content}
-                    
-                    # Handle tool calls streaming
-                    if delta.tool_calls:
-                        for tc_delta in delta.tool_calls:
-                            if len(tool_calls) <= tc_delta.index:
-                                tool_calls.append({
-                                    "id": tc_delta.id,
-                                    "type": "function",
-                                    "function": {"name": "", "arguments": ""}
-                                })
-                            
-                            if tc_delta.id:
-                                tool_calls[tc_delta.index]["id"] = tc_delta.id
-                            if tc_delta.function:
-                                if tc_delta.function.name:
-                                    tool_calls[tc_delta.index]["function"]["name"] += tc_delta.function.name
-                                if tc_delta.function.arguments:
-                                    tool_calls[tc_delta.index]["function"]["arguments"] += tc_delta.function.arguments
+            try:
+                # Process the stream
+                for chunk in stream:
+                    if hasattr(chunk, 'choices') and chunk.choices:
+                        delta = chunk.choices[0].delta
+                        
+                        # Handle content streaming
+                        if delta.content:
+                            full_content += delta.content
+                            yield {"type": "content", "delta": delta.content}
+                        
+                        # Handle tool calls streaming
+                        if delta.tool_calls:
+                            for tc_delta in delta.tool_calls:
+                                if len(tool_calls) <= tc_delta.index:
+                                    tool_calls.append({
+                                        "id": tc_delta.id,
+                                        "type": "function",
+                                        "function": {"name": "", "arguments": ""}
+                                    })
+                                
+                                if tc_delta.id:
+                                    tool_calls[tc_delta.index]["id"] = tc_delta.id
+                                if tc_delta.function:
+                                    if tc_delta.function.name:
+                                        tool_calls[tc_delta.index]["function"]["name"] += tc_delta.function.name
+                                    if tc_delta.function.arguments:
+                                        tool_calls[tc_delta.index]["function"]["arguments"] += tc_delta.function.arguments
+            except Exception as e:
+                yield {"type": "error", "content": f"Terputus saat streaming: {str(e)}"}
+                return
 
             # If no tool calls, we are done with this turn
             if not tool_calls:
