@@ -46,7 +46,8 @@ async def run_app():
                         ui.set_status("Executing Tool...")
                         ui.show_tool_start(event["name"], event["args"])
                     elif event["type"] == "tool_end":
-                        ui.show_tool_end(event["name"], event["result"])
+                        ui.set_status("Tool Finished")
+                        ui.show_tool_end(event["name"], event["result"], event.get("args"))
                     elif event["type"] == "error":
                         ui.set_status("Error")
                         ui.print_error(event["content"])

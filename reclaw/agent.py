@@ -6,17 +6,14 @@ from .llm import LLMClient
 from .tools import TOOL_DEFINITIONS, TOOL_MAP
 from .config import MAX_HISTORY_TURNS, MAX_ITERATIONS, MAX_TOOL_OUTPUT
 
-# Enhanced System Prompt for Auto-Solver and Proactive Fixing
-SYSTEM_PROMPT = """Kamu adalah ReClaw Pro v3.7.
-Tugas: Coding assistant agentic, efisien, aman, dan proaktif.
-
-PRINSIP KERJA:
-1. AUTO-SOLVER: Jika run_shell menghasilkan error, kamu WAJIB menganalisis log tersebut dan langsung mencoba memperbaikinya (Auto-Fix) menggunakan tool yang sesuai.
-2. TRANSPARANSI: Gunakan tools langsung. Jangan banyak bicara sebelum eksekusi.
-3. EFISIENSI: Gunakan edit_file untuk perubahan kecil. Jangan ulangi kode yang sudah ada.
-4. KONTEKS: Selalu cek isi file atau direktori jika ragu.
-
-Bahasa: Indonesia (default)."""
+# Ultra-concise system prompt
+SYSTEM_PROMPT = """Kamu adalah ReClaw Pro v3.8.
+Tugas: Coding assistant agentic, efisien, dan langsung eksekusi.
+ATURAN:
+1. JANGAN banyak bicara. Langsung gunakan tools.
+2. Jika ada error, langsung perbaiki (Auto-Fix).
+3. Gunakan edit_file untuk perubahan kecil.
+4. Jawaban harus teknis dan padat."""
 
 class ReClawAgent:
     def __init__(self):
@@ -27,7 +24,7 @@ class ReClawAgent:
     def _truncate_tool_result(self, result: str) -> str:
         if len(result) > MAX_TOOL_OUTPUT:
             half = MAX_TOOL_OUTPUT // 2
-            return result[:half] + f"\n... [truncated {len(result)} chars] ...\n" + result[-half:]
+            return result[:half] + f"\n... [truncated] ...\n" + result[-half:]
         return result
 
     def run(self, user_input: str):
@@ -47,10 +44,10 @@ class ReClawAgent:
                 try:
                     stream = self.llm.chat(messages, tools=TOOL_DEFINITIONS, tool_choice="auto", stream=True)
                     break
-                except Exception as e:
+                except Exception as err:
                     retry_count += 1
                     if retry_count >= max_retries:
-                        yield {"type": "error", "content": f"Connection failed: {str(e)}"}
+                        yield {"type": "error", "content": f"Connection failed: {str(err)}"}
                         return
                     time.sleep(1)
             
@@ -84,8 +81,8 @@ class ReClawAgent:
                                         tool_calls[tc_delta.index]["function"]["name"] += tc_delta.function.name
                                     if tc_delta.function.arguments:
                                         tool_calls[tc_delta.index]["function"]["arguments"] += tc_delta.function.arguments
-            except Exception as e:
-                yield {"type": "error", "content": f"Stream interrupted: {str(e)}"}
+            except Exception as err:
+                yield {"type": "error", "content": f"Stream interrupted: {str(err)}"}
                 return
 
             if not tool_calls:
@@ -108,11 +105,11 @@ class ReClawAgent:
                 if name in TOOL_MAP:
                     try:
                         result = TOOL_MAP[name](**args)
-                    except Exception as e:
-                        result = f"Error: {str(e)}"
+                    except Exception as err:
+                        result = f"Error: {str(err)}"
                 else:
                     result = f"Error: Unknown tool '{name}'"
 
                 result_str = self._truncate_tool_result(str(result))
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result_str})
-                yield {"type": "tool_end", "name": name, "result": result_str}
+                yield {"type": "tool_end", "name": name, "result": result_str, "args": args}
