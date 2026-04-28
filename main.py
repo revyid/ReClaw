@@ -15,12 +15,23 @@ if not os.getenv("RECLAW_API_KEY"):
 from reclaw.agent import ReClawAgent
 from reclaw.ui import print_welcome, ui
 
+async def background_maintenance():
+    """Task to keep the UI refreshed and repaired."""
+    while True:
+        ui.update_display()
+        if ui.live:
+            ui.live.refresh()
+        await asyncio.sleep(1.0)
+
 async def run_app():
     print_welcome()
-    await asyncio.sleep(1.5) # Show welcome for a bit
+    await asyncio.sleep(1.0)
     
     agent = ReClawAgent()
     ui.start()
+    
+    # Start background maintenance
+    maintenance_task = asyncio.create_task(background_maintenance())
     
     try:
         while True:
@@ -37,11 +48,10 @@ async def run_app():
             
             try:
                 ui.set_status("Thinking...")
-                # Iterate through the agent's generator
                 for event in agent.run(user_text):
                     if event["type"] == "content":
                         ui.set_status("Streaming...")
-                        ui.update_content(event["delta"])
+                        await ui.stream_content(event["delta"])
                     elif event["type"] == "tool_start":
                         ui.set_status("Executing Tool...")
                         ui.set_tool(event["name"])
@@ -49,14 +59,15 @@ async def run_app():
                         ui.set_tool(None)
                     elif event["type"] == "error":
                         ui.set_status("Error")
-                        ui.update_content(f"\n\n[bold red]![/bold red] {event['content']}\n")
+                        await ui.stream_content(f"\n\n[bold red]![/bold red] {event['content']}\n")
                 
                 ui.finalize_content()
             except Exception as e:
                 ui.set_status("Error")
-                ui.update_content(f"\n\n[bold red]SYSTEM ERROR:[/bold red] {str(e)}\n")
+                await ui.stream_content(f"\n\n[bold red]SYSTEM ERROR:[/bold red] {str(e)}\n")
                 ui.finalize_content()
     finally:
+        maintenance_task.cancel()
         ui.stop()
         print("\nSampai jumpa!")
 

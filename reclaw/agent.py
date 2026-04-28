@@ -1,17 +1,19 @@
 import json
 import time
+import asyncio
 from collections import deque
 from .llm import LLMClient
 from .tools import TOOL_DEFINITIONS, TOOL_MAP
 from .config import MAX_HISTORY_TURNS, MAX_ITERATIONS, MAX_TOOL_OUTPUT
 
-SYSTEM_PROMPT = """Kamu adalah ReClaw Pro, agen coding profesional.
-Tugas: edit script, jalankan command, bantu coding dengan presisi tinggi.
-ATURAN:
-1. Gunakan tools secara efisien.
-2. Berpikir logis dan singkat.
-3. run_shell hanya untuk command aman.
-4. Bahasa: gunakan bahasa yang sama dengan user (default Indonesia)."""
+# Refined, concise, and professional system prompt
+SYSTEM_PROMPT = """Kamu adalah ReClaw Pro v3.4.
+Tugas: Coding assistant agentic, efisien, aman.
+Prinsip:
+1. Gunakan tools (write_file, edit_file, run_shell) langsung tanpa banyak bicara.
+2. Jawaban singkat, padat, teknis. Jangan ulangi kode yang sudah ada.
+3. Gunakan edit_file untuk perubahan kecil.
+4. Bahasa: Indonesia (default) atau sesuai user."""
 
 class ReClawAgent:
     def __init__(self):
@@ -54,7 +56,6 @@ class ReClawAgent:
             
             try:
                 for chunk in stream:
-                    # Handle error dict from llm.py
                     if isinstance(chunk, dict) and "error" in chunk:
                         yield {"type": "error", "content": f"API Error: {chunk['error']}"}
                         return
