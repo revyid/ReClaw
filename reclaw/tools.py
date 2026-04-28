@@ -155,7 +155,7 @@ def tool_view_file(path: str):
         output = []
         for i, line in enumerate(lines, 1):
             output.append(f"{i:4} | {line.rstrip()}")
-        return "\n".join(output[:100]) # Limit to 100 lines for view
+        return "\n".join(output[:100])
     except Exception as e: return f"Error: {e}"
 
 def tool_write_file(path: str, content: str):
@@ -185,11 +185,18 @@ def tool_run_shell(command: str, timeout: int = 30):
     safe, msg = is_safe_command(command)
     if not safe: return f"Blocked: {msg}"
     try:
+        # Run with combined stdout and stderr for better Auto-Solver analysis
         result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout)
-        output = f"[exit {result.returncode}]\n{result.stdout}"
-        if result.stderr: output += f"\n[stderr]\n{result.stderr}"
+        output = f"[Exit Code: {result.returncode}]\n"
+        if result.stdout:
+            output += f"[STDOUT]\n{result.stdout}\n"
+        if result.stderr:
+            output += f"[STDERR]\n{result.stderr}\n"
         return _truncate(output)
-    except Exception as e: return f"Error: {e}"
+    except subprocess.TimeoutExpired:
+        return "Error: Command timed out."
+    except Exception as e:
+        return f"Error: {e}"
 
 def tool_list_directory(path: str = "."):
     safe, msg = is_safe_path(path)
