@@ -13,25 +13,11 @@ if not os.getenv("RECLAW_API_KEY"):
     sys.exit(1)
 
 from reclaw.agent import ReClawAgent
-from reclaw.ui import print_welcome, ui
-
-async def background_maintenance():
-    """Task to keep the UI refreshed and repaired."""
-    while True:
-        ui.update_display()
-        if ui.live:
-            ui.live.refresh()
-        await asyncio.sleep(1.0)
+from reclaw.ui import ui
 
 async def run_app():
-    print_welcome()
-    await asyncio.sleep(1.0)
-    
+    ui.print_welcome()
     agent = ReClawAgent()
-    ui.start()
-    
-    # Start background maintenance
-    maintenance_task = asyncio.create_task(background_maintenance())
     
     try:
         while True:
@@ -39,36 +25,39 @@ async def run_app():
             user_text = await ui.get_input_async()
 
             if user_text.strip().lower() in ("exit", "quit", "keluar"):
+                print("\nSampai jumpa!")
                 break
 
             if not user_text.strip():
                 continue
 
-            ui.add_user_message(user_text)
+            ui.print_user_message(user_text)
             
             try:
                 ui.set_status("Thinking...")
+                full_response = ""
+                
                 for event in agent.run(user_text):
                     if event["type"] == "content":
                         ui.set_status("Streaming...")
+                        full_response += event["delta"]
                         await ui.stream_content(event["delta"])
                     elif event["type"] == "tool_start":
                         ui.set_status("Executing Tool...")
-                        ui.set_tool(event["name"])
+                        ui.show_tool_start(event["name"], event["args"])
                     elif event["type"] == "tool_end":
-                        ui.set_tool(None)
+                        ui.show_tool_end(event["name"], event["result"])
                     elif event["type"] == "error":
                         ui.set_status("Error")
-                        await ui.stream_content(f"\n\n[bold red]![/bold red] {event['content']}\n")
+                        ui.print_error(event["content"])
                 
-                ui.finalize_content()
+                if full_response:
+                    ui.finalize_content(full_response)
+                
             except Exception as e:
                 ui.set_status("Error")
-                await ui.stream_content(f"\n\n[bold red]SYSTEM ERROR:[/bold red] {str(e)}\n")
-                ui.finalize_content()
-    finally:
-        maintenance_task.cancel()
-        ui.stop()
+                ui.print_error(str(e))
+    except KeyboardInterrupt:
         print("\nSampai jumpa!")
 
 if __name__ == "__main__":
